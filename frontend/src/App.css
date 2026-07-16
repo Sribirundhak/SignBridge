@@ -150,6 +150,15 @@ body {
   background: #000;
 }
 
+.sb-webcam-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
 .sb-webcam-icon {
   color: var(--sb-text-muted);
 }
@@ -161,28 +170,24 @@ body {
 }
 
 .sb-badge {
-  position: absolute;
-  top: 12px;
-  right: 12px;
   padding: 4px 10px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 500;
 }
 
-.sb-webcam-placeholder .sb-badge {
-  position: static;
-  margin-top: 4px;
-}
-
-.sb-webcam-video ~ .sb-badge,
-.sb-webcam-placeholder:has(.sb-webcam-video[style*="block"]) .sb-badge {
+.sb-webcam-placeholder > .sb-badge {
   position: absolute;
   top: 12px;
   right: 12px;
-  margin-top: 0;
   background: rgba(12, 14, 19, 0.75);
   backdrop-filter: blur(4px);
+}
+
+.sb-hand-badge {
+  top: auto !important;
+  bottom: 12px;
+  right: 12px;
 }
 
 .sb-badge-idle {
@@ -212,6 +217,35 @@ body {
   text-align: center;
   margin: 0;
   padding: 12px;
+}
+
+.sb-gesture-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #0c0e13;
+  border-radius: 10px;
+  border: 1px solid var(--sb-panel-border);
+  padding: 16px;
+}
+
+.sb-gesture-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sb-gesture-key {
+  font-size: 13px;
+  color: var(--sb-text-muted);
+}
+
+.sb-gesture-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--sb-accent);
+  letter-spacing: 0.02em;
 }
 
 /* AI status */
@@ -278,4 +312,43 @@ body {
   background: var(--sb-panel);
   color: var(--sb-text-muted);
   font-size: 13px;
+}
+
+/* --- Conversation history entries (additive, same card visual language) --- */
+.sb-history-items {
+  flex: 1;
+  min-height: 140px;
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #0c0e13;
+  border-radius: 10px;
+  border: 1px solid var(--sb-panel-border);
+  padding: 10px;
+}
+
+.sb-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--sb-panel);
+  border: 1px solid var(--sb-panel-border);
+}
+
+.sb-history-item-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sb-text);
+  letter-spacing: 0.02em;
+}
+
+.sb-history-item-meta {
+  font-size: 12px;
+  color: var(--sb-text-muted);
+  white-space: nowrap;
 }

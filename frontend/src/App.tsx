@@ -1,13 +1,84 @@
 import React, { useEffect, useRef, useState } from "react";
 import "./App.css";
+import type {
+  GestureName,
+  GestureResult,
+} from "./utils/gestureTypes";
+
+import { defaultGestureRecognizer } from "./utils/gestureRecognition";
 
 type CameraState = "starting" | "connected" | "denied";
 
+interface HistoryEntry {
+  id: string;
+  gesture: GestureName;
+  label: string;
+  confidence: number;
+  timestamp: number;
+}
+
+const MAX_HISTORY = 20;
+const STABLE_DURATION_MS = 1000; // gesture must hold for 1s
+const MIN_HISTORY_CONFIDENCE = 0.8;
+const CURRENT_GESTURE_RESET_MS = 2000; // reset to "Waiting..." after 2s idle
+
+// Gestures that count as "real" detections (excludes UNKNOWN / NO_HAND)
+const RECOGNIZED_GESTURES: GestureName[] = [
+  "HELLO",
+  "STOP",
+  "YES",
+  "POINT",
+];
+
+const loadScript = (src: string): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing) {
+      resolve();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.crossOrigin = "anonymous";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.body.appendChild(script);
+  });
+
+const formatTime = (timestamp: number): string =>
+  new Date(timestamp).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+
 const App: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const [cameraState, setCameraState] = useState<CameraState>("starting");
+  const handsRef = useRef<any>(null);
 
+  const [cameraState, setCameraState] = useState<CameraState>("starting");
+  const [handDetected, setHandDetected] = useState(false);
+  const [handsReady, setHandsReady] = useState(false);
+
+  // Live gesture shown in the "Gesture Output" card (resets to "Waiting..." after idle)
+  const [displayedGesture, setDisplayedGesture] = useState<GestureResult | null>(
+    null
+  );
+
+  // Committed conversation history (newest first)
+  const [gestureHistory, setGestureHistory] = useState<HistoryEntry[]>([]);
+
+  // --- Refs for stability tracking / debouncing (do not trigger re-renders) ---
+  const stableGestureRef = useRef<{ gesture: GestureName; startTime: number } | null>(
+    null
+  );
+  const lastAddedGestureRef = useRef<GestureName | null>(null);
+  const displayResetTimeoutRef = useRef<number | null>(null);
+
+  // Start webcam
   useEffect(() => {
     let cancelled = false;
 
@@ -48,8 +119,203 @@ const App: React.FC = () => {
     };
   }, []);
 
+  // Clear the "Current Gesture" reset timer on unmount
+  useEffect(() => {
+    return () => {
+      if (displayResetTimeoutRef.current !== null) {
+        window.clearTimeout(displayResetTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  /**
+   * Called on every recognized gesture frame.
+   * Handles:
+   *  - Live "Current Gesture" display + its 2s idle reset.
+   *  - Committing a gesture to history once it has been held stably
+   *    for >= 1s with confidence >= 0.8, ignoring consecutive duplicates.
+   */
+  const handleGestureFrame = (gesture: GestureResult) => {
+    const now = Date.now();
+    const isRecognized = RECOGNIZED_GESTURES.includes(gesture.gesture);
+
+    if (isRecognized) {
+      // Update live display + restart the 2s idle reset timer.
+      setDisplayedGesture(gesture);
+      if (displayResetTimeoutRef.current !== null) {
+        window.clearTimeout(displayResetTimeoutRef.current);
+      }
+      displayResetTimeoutRef.current = window.setTimeout(() => {
+        setDisplayedGesture(null);
+      }, CURRENT_GESTURE_RESET_MS);
+
+      // Track how long this gesture has been held continuously.
+      if (stableGestureRef.current?.gesture === gesture.gesture) {
+        // same gesture as last frame -> keep the original startTime
+      } else {
+        stableGestureRef.current = { gesture: gesture.gesture, startTime: now };
+      }
+
+      const elapsed = now - (stableGestureRef.current?.startTime ?? now);
+      const heldLongEnough = elapsed >= STABLE_DURATION_MS;
+      const confident = gesture.confidence >= MIN_HISTORY_CONFIDENCE;
+      const isDuplicateConsecutive =
+        lastAddedGestureRef.current === gesture.gesture;
+
+      if (heldLongEnough && confident && !isDuplicateConsecutive) {
+        const entry: HistoryEntry = {
+          id: `${now}-${gesture.gesture}`,
+          gesture: gesture.gesture,
+          label: gesture.label,
+          confidence: gesture.confidence,
+          timestamp: now,
+        };
+
+        setGestureHistory((prev) => [entry, ...prev].slice(0, MAX_HISTORY));
+        lastAddedGestureRef.current = gesture.gesture;
+      }
+    } else {
+      // No hand / unknown gesture -> stability streak is broken.
+      stableGestureRef.current = null;
+    }
+  };
+
+  // Load MediaPipe Hands (via CDN, no npm install) and set up detection
+  useEffect(() => {
+    let isMounted = true;
+    let handsInstance: any;
+
+    const initHands = async () => {
+      try {
+        await loadScript(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"
+        );
+        await loadScript(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
+        );
+
+        if (!isMounted) return;
+
+        const w = window as any;
+        handsInstance = new w.Hands({
+          locateFile: (file: string) =>
+            `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+        });
+
+        handsInstance.setOptions({
+          maxNumHands: 1,
+          modelComplexity: 1,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5,
+        });
+
+        handsInstance.onResults((results: any) => {
+          const canvas = canvasRef.current;
+          const video = videoRef.current;
+          if (!canvas || !video) return;
+
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return;
+
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+
+          ctx.save();
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          const hasHand =
+            results.multiHandLandmarks && results.multiHandLandmarks.length > 0;
+
+          if (hasHand) {
+            setHandDetected(true);
+            const landmarks = results.multiHandLandmarks[0];
+
+            for (const handLandmarks of results.multiHandLandmarks) {
+              w.drawConnectors(ctx, handLandmarks, w.HAND_CONNECTIONS, {
+                color: "#6d5bff",
+                lineWidth: 3,
+              });
+              w.drawLandmarks(ctx, handLandmarks, {
+                color: "#2fd67a",
+                lineWidth: 1,
+                radius: 4,
+              });
+            }
+
+            // MediaPipe -> Hand Landmarks -> Gesture Detection Function
+            const gesture = defaultGestureRecognizer.recognize(landmarks);
+            handleGestureFrame(gesture);
+          } else {
+            setHandDetected(false);
+            handleGestureFrame(defaultGestureRecognizer.recognize(null));
+          }
+
+          ctx.restore();
+        });
+
+        handsRef.current = handsInstance;
+        if (isMounted) setHandsReady(true);
+      } catch (err) {
+        if (isMounted) setHandsReady(false);
+      }
+    };
+
+    initHands();
+
+    return () => {
+      isMounted = false;
+      if (handsInstance) {
+        handsInstance.close?.();
+      }
+      handsRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Frame loop: feed video frames to MediaPipe Hands while camera is connected
+  useEffect(() => {
+    let rafId: number;
+    let cancelled = false;
+
+    const detectLoop = async () => {
+      if (
+        !cancelled &&
+        cameraState === "connected" &&
+        handsReady &&
+        handsRef.current &&
+        videoRef.current &&
+        videoRef.current.readyState >= 2
+      ) {
+        try {
+          await handsRef.current.send({ image: videoRef.current });
+        } catch {
+          // ignore transient send errors (e.g. during teardown)
+        }
+      }
+      rafId = requestAnimationFrame(detectLoop);
+    };
+
+    rafId = requestAnimationFrame(detectLoop);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
+    };
+  }, [cameraState, handsReady]);
+
   const isConnected = cameraState === "connected";
   const isDenied = cameraState === "denied";
+
+  const modelStatus = !handsReady
+    ? "Loading"
+    : isConnected
+    ? "Detecting"
+    : "Ready";
+  const modelStatusActive = modelStatus === "Detecting";
+
+  const confidencePercent = displayedGesture
+    ? Math.round(displayedGesture.confidence * 100)
+    : null;
 
   return (
     <div className="sb-app">
@@ -86,6 +352,10 @@ const App: React.FC = () => {
                 style={{ display: isConnected ? "block" : "none" }}
               />
 
+              {isConnected && (
+                <canvas ref={canvasRef} className="sb-webcam-canvas" />
+              )}
+
               {!isConnected && (
                 <>
                   <div className="sb-webcam-icon" aria-hidden="true">
@@ -114,6 +384,16 @@ const App: React.FC = () => {
               >
                 {isConnected ? "Connected" : "Not connected"}
               </span>
+
+              {isConnected && (
+                <span
+                  className={`sb-badge sb-hand-badge ${
+                    handDetected ? "sb-badge-connected" : "sb-badge-idle"
+                  }`}
+                >
+                  {handDetected ? "Hand Detected" : "No Hand Detected"}
+                </span>
+              )}
             </div>
           </div>
         </section>
@@ -124,11 +404,26 @@ const App: React.FC = () => {
             <div className="sb-card-header">
               <h2>Gesture Output</h2>
             </div>
-            <div className="sb-gesture-output">
-              <p className="sb-gesture-placeholder">
-                Detected sign language output will appear here…
-              </p>
-            </div>
+            {displayedGesture ? (
+              <div className="sb-gesture-result">
+                <div className="sb-gesture-row">
+                  <span className="sb-gesture-key">Current Gesture:</span>
+                  <span className="sb-gesture-value">
+                    {displayedGesture.label}
+                  </span>
+                </div>
+                <div className="sb-gesture-row">
+                  <span className="sb-gesture-key">Confidence:</span>
+                  <span className="sb-gesture-value">
+                    {confidencePercent}%
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="sb-gesture-output">
+                <p className="sb-gesture-placeholder">Waiting...</p>
+              </div>
+            )}
           </div>
 
           <div className="sb-card">
@@ -137,8 +432,12 @@ const App: React.FC = () => {
             </div>
             <div className="sb-ai-status">
               <div className="sb-status-row">
-                <span className="sb-dot sb-dot-idle" />
-                <span>Model: Idle</span>
+                <span
+                  className={`sb-dot ${
+                    modelStatusActive ? "sb-dot-connected" : "sb-dot-idle"
+                  }`}
+                />
+                <span>Model: {modelStatus}</span>
               </div>
               <div className="sb-status-row">
                 <span
@@ -149,8 +448,14 @@ const App: React.FC = () => {
                 <span>Camera: {isConnected ? "Connected" : "Disconnected"}</span>
               </div>
               <div className="sb-status-row">
-                <span className="sb-dot sb-dot-idle" />
-                <span>Translation: Waiting</span>
+                <span
+                  className={`sb-dot ${
+                    handDetected ? "sb-dot-connected" : "sb-dot-idle"
+                  }`}
+                />
+                <span>
+                  Translation: {handDetected ? "Detecting" : "Waiting"}
+                </span>
               </div>
             </div>
           </div>
@@ -159,11 +464,27 @@ const App: React.FC = () => {
             <div className="sb-card-header">
               <h2>Conversation History</h2>
             </div>
-            <div className="sb-history-list">
-              <p className="sb-history-empty">
-                No conversation yet. Start signing to begin.
-              </p>
-            </div>
+            {gestureHistory.length === 0 ? (
+              <div className="sb-history-list">
+                <p className="sb-history-empty">
+                  No conversation yet. Start signing to begin.
+                </p>
+              </div>
+            ) : (
+              <div className="sb-history-items">
+                {gestureHistory.map((entry) => (
+                  <div key={entry.id} className="sb-history-item">
+                    <span className="sb-history-item-label">
+                      {entry.label}
+                    </span>
+                    <span className="sb-history-item-meta">
+                      {Math.round(entry.confidence * 100)}% ·{" "}
+                      {formatTime(entry.timestamp)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
       </main>
