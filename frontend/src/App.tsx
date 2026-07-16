@@ -1,122 +1,102 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import React from "react";
+import "./App.css";
 
-function App() {
-  const [count, setCount] = useState(0)
-
+const App: React.FC = () => {
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <div className="sb-app">
+      {/* Header */}
+      <header className="sb-header">
+        <div className="sb-header-left">
+          <div className="sb-logo-placeholder" aria-label="SignBridge AI logo">
+            <span>SB</span>
+          </div>
+          <div className="sb-title-group">
+            <h1 className="sb-title">SignBridge AI</h1>
+            <p className="sb-subtitle">
+              Breaking communication barriers between Deaf and Hearing people.
+            </p>
+          </div>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+      </header>
 
-      <div className="ticks"></div>
+      {/* Main */}
+      <main className="sb-main">
+        {/* Left: Webcam */}
+        <section className="sb-main-left">
+          <div className="sb-card sb-webcam-card">
+            <div className="sb-card-header">
+              <h2>Webcam Feed</h2>
+            </div>
+            <div className="sb-webcam-placeholder">
+              <div className="sb-webcam-icon" aria-hidden="true">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M17 10.5V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3.5l4 4v-11l-4 4Z"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
+              <p className="sb-webcam-text">Camera feed will appear here</p>
+              <span className="sb-badge sb-badge-idle">Not connected</span>
+            </div>
+          </div>
+        </section>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+        {/* Right: Gesture Output, AI Status, Conversation History */}
+        <section className="sb-main-right">
+          <div className="sb-card">
+            <div className="sb-card-header">
+              <h2>Gesture Output</h2>
+            </div>
+            <div className="sb-gesture-output">
+              <p className="sb-gesture-placeholder">
+                Detected sign language output will appear here…
+              </p>
+            </div>
+          </div>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
-}
+          <div className="sb-card">
+            <div className="sb-card-header">
+              <h2>AI Status</h2>
+            </div>
+            <div className="sb-ai-status">
+              <div className="sb-status-row">
+                <span className="sb-dot sb-dot-idle" />
+                <span>Model: Idle</span>
+              </div>
+              <div className="sb-status-row">
+                <span className="sb-dot sb-dot-idle" />
+                <span>Camera: Disconnected</span>
+              </div>
+              <div className="sb-status-row">
+                <span className="sb-dot sb-dot-idle" />
+                <span>Translation: Waiting</span>
+              </div>
+            </div>
+          </div>
 
-export default App
+          <div className="sb-card sb-history-card">
+            <div className="sb-card-header">
+              <h2>Conversation History</h2>
+            </div>
+            <div className="sb-history-list">
+              <p className="sb-history-empty">
+                No conversation yet. Start signing to begin.
+              </p>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      {/* Footer */}
+      <footer className="sb-footer">
+        <p>Powered by AI</p>
+      </footer>
+    </div>
+  );
+};
+
+export default App;
