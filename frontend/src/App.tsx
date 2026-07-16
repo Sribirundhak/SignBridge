@@ -1,7 +1,56 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import "./App.css";
 
+type CameraState = "starting" | "connected" | "denied";
+
 const App: React.FC = () => {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [cameraState, setCameraState] = useState<CameraState>("starting");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const startCamera = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+
+        setCameraState("connected");
+      } catch (err) {
+        if (!cancelled) {
+          setCameraState("denied");
+        }
+      }
+    };
+
+    startCamera();
+
+    return () => {
+      cancelled = true;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
+
+  const isConnected = cameraState === "connected";
+  const isDenied = cameraState === "denied";
+
   return (
     <div className="sb-app">
       {/* Header */}
@@ -28,19 +77,43 @@ const App: React.FC = () => {
               <h2>Webcam Feed</h2>
             </div>
             <div className="sb-webcam-placeholder">
-              <div className="sb-webcam-icon" aria-hidden="true">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
-                  <path
-                    d="M17 10.5V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3.5l4 4v-11l-4 4Z"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </div>
-              <p className="sb-webcam-text">Camera feed will appear here</p>
-              <span className="sb-badge sb-badge-idle">Not connected</span>
+              <video
+                ref={videoRef}
+                className="sb-webcam-video"
+                autoPlay
+                playsInline
+                muted
+                style={{ display: isConnected ? "block" : "none" }}
+              />
+
+              {!isConnected && (
+                <>
+                  <div className="sb-webcam-icon" aria-hidden="true">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M17 10.5V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3.5l4 4v-11l-4 4Z"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </div>
+                  <p className="sb-webcam-text">
+                    {isDenied
+                      ? "Camera access denied."
+                      : "Starting camera..."}
+                  </p>
+                </>
+              )}
+
+              <span
+                className={`sb-badge ${
+                  isConnected ? "sb-badge-connected" : "sb-badge-idle"
+                }`}
+              >
+                {isConnected ? "Connected" : "Not connected"}
+              </span>
             </div>
           </div>
         </section>
@@ -68,8 +141,12 @@ const App: React.FC = () => {
                 <span>Model: Idle</span>
               </div>
               <div className="sb-status-row">
-                <span className="sb-dot sb-dot-idle" />
-                <span>Camera: Disconnected</span>
+                <span
+                  className={`sb-dot ${
+                    isConnected ? "sb-dot-connected" : "sb-dot-idle"
+                  }`}
+                />
+                <span>Camera: {isConnected ? "Connected" : "Disconnected"}</span>
               </div>
               <div className="sb-status-row">
                 <span className="sb-dot sb-dot-idle" />

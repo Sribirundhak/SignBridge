@@ -8,6 +8,7 @@
   --sb-text-muted: #9ca0ac;
   --sb-radius: 14px;
   --sb-idle: #ffb020;
+  --sb-connected: #2fd67a;
 }
 
 * {
@@ -126,6 +127,7 @@ body {
 }
 
 .sb-webcam-placeholder {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -136,6 +138,16 @@ body {
   border: 1px dashed var(--sb-panel-border);
   border-radius: 10px;
   min-height: 320px;
+  overflow: hidden;
+}
+
+.sb-webcam-video {
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  object-fit: cover;
+  border-radius: 10px;
+  background: #000;
 }
 
 .sb-webcam-icon {
@@ -149,15 +161,38 @@ body {
 }
 
 .sb-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
   padding: 4px 10px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 500;
 }
 
+.sb-webcam-placeholder .sb-badge {
+  position: static;
+  margin-top: 4px;
+}
+
+.sb-webcam-video ~ .sb-badge,
+.sb-webcam-placeholder:has(.sb-webcam-video[style*="block"]) .sb-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  margin-top: 0;
+  background: rgba(12, 14, 19, 0.75);
+  backdrop-filter: blur(4px);
+}
+
 .sb-badge-idle {
   background: rgba(255, 176, 32, 0.12);
   color: var(--sb-idle);
+}
+
+.sb-badge-connected {
+  background: rgba(47, 214, 122, 0.12);
+  color: var(--sb-connected);
 }
 
 /* Gesture output */
@@ -204,6 +239,11 @@ body {
 .sb-dot-idle {
   background: var(--sb-idle);
   box-shadow: 0 0 0 4px rgba(255, 176, 32, 0.15);
+}
+
+.sb-dot-connected {
+  background: var(--sb-connected);
+  box-shadow: 0 0 0 4px rgba(47, 214, 122, 0.15);
 }
 
 /* Conversation history */
