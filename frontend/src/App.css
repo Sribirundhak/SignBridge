@@ -352,3 +352,60 @@ body {
   color: var(--sb-text-muted);
   white-space: nowrap;
 }
+
+/* --- Sentence builder + Clear/Export actions (additive, requirements 4-6) --- */
+.sb-sentence-card {
+  gap: 14px;
+}
+
+.sb-sentence-text {
+  margin: 0;
+  min-height: 20px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--sb-text);
+  background: #0c0e13;
+  border: 1px solid var(--sb-panel-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  word-break: break-word;
+}
+
+.sb-sentence-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sb-btn {
+  flex: 1;
+  min-width: 140px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--sb-panel-border);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.05s ease;
+}
+
+.sb-btn:active {
+  transform: scale(0.98);
+}
+
+.sb-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.sb-btn-primary {
+  background: var(--sb-accent);
+  border-color: var(--sb-accent);
+  color: #ffffff;
+}
+
+.sb-btn-secondary {
+  background: transparent;
+  color: var(--sb-text);
+}

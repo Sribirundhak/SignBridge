@@ -1,8 +1,7 @@
 // Low-level geometry helpers shared by gesture recognizers.
 // Based on the standard 21-point MediaPipe Hands landmark model.
 
-import type { Landmark } from "./gestureTypes";
-
+import type{ Landmark } from "./gestureTypes";
 export const LANDMARK = {
   WRIST: 0,
   THUMB_CMC: 1,
@@ -38,13 +37,36 @@ export const distance = (a: Landmark, b: Landmark): number =>
 export const isFingerExtended = (
   landmarks: Landmark[],
   tipIdx: number,
-  mcpIdx: number,
-  threshold = 1.2
+  mcpIdx: number
+): boolean => {
+  // Thumb is sideways, so X-axis works better
+  if (tipIdx === LANDMARK.THUMB_TIP) {
+  return distance(
+    landmarks[LANDMARK.THUMB_TIP],
+    landmarks[LANDMARK.THUMB_MCP]
+  ) > 0.10;
+}
+
+  // Other fingers: tip should be above MCP
+  return (
+    landmarks[tipIdx].y <
+    landmarks[mcpIdx].y
+  );
+};
+/**
+ * A finger is treated as "curled" when its tip sits close to (or below,
+ * in landmark-distance terms) its PIP joint distance from the wrist —
+ * i.e. the tip has folded back toward the palm.
+ */
+export const isFingerCurled = (
+  landmarks: Landmark[],
+  tipIdx: number,
+  pipIdx: number
 ): boolean => {
   const wrist = landmarks[LANDMARK.WRIST];
   const tipDist = distance(landmarks[tipIdx], wrist);
-  const mcpDist = distance(landmarks[mcpIdx], wrist);
-  return tipDist > mcpDist * threshold;
+  const pipDist = distance(landmarks[pipIdx], wrist);
+  return tipDist <= pipDist * 1.05;
 };
 
 export interface FingerState {
@@ -64,7 +86,6 @@ export const getFingerState = (landmarks: Landmark[]): FingerState => {
       landmarks,
       LANDMARK.THUMB_TIP,
       LANDMARK.THUMB_MCP,
-      1.1
     ),
     index: isFingerExtended(landmarks, LANDMARK.INDEX_TIP, LANDMARK.INDEX_MCP),
     middle: isFingerExtended(
@@ -78,11 +99,77 @@ export const getFingerState = (landmarks: Landmark[]): FingerState => {
 };
 
 /**
+ * Returns which of the five fingers are currently curled (folded into palm).
+ * Not simply the inverse of getFingerState — uses PIP-relative distance so
+ * it stays reliable even in ambiguous "half-open" hand poses.
+ */
+export const getCurledState = (landmarks: Landmark[]): FingerState => {
+  return {
+    thumb: isFingerCurled(landmarks, LANDMARK.THUMB_TIP, LANDMARK.THUMB_IP),
+    index: isFingerCurled(landmarks, LANDMARK.INDEX_TIP, LANDMARK.INDEX_PIP),
+    middle: isFingerCurled(
+      landmarks,
+      LANDMARK.MIDDLE_TIP,
+      LANDMARK.MIDDLE_PIP
+    ),
+    ring: isFingerCurled(landmarks, LANDMARK.RING_TIP, LANDMARK.RING_PIP),
+    pinky: isFingerCurled(landmarks, LANDMARK.PINKY_TIP, LANDMARK.PINKY_PIP),
+  };
+};
+
+/**
  * True when the thumb tip sits clearly above the wrist (screen-space "up"),
  * used to disambiguate a "thumbs up" from a thumb merely extended sideways.
  */
 export const isThumbPointingUp = (landmarks: Landmark[]): boolean => {
-  const thumbTip = landmarks[LANDMARK.THUMB_TIP];
-  const wrist = landmarks[LANDMARK.WRIST];
-  return thumbTip.y < wrist.y;
+  return (
+    landmarks[LANDMARK.THUMB_TIP].y <
+    landmarks[LANDMARK.THUMB_IP].y
+  );
+};
+
+/**
+ * True when the thumb tip sits clearly below the wrist (screen-space
+ * "down"), reserved for a possible future "thumbs down" gesture.
+ */
+export const isThumbPointingDown = (landmarks: Landmark[]): boolean => {
+  return (
+    landmarks[LANDMARK.THUMB_TIP].y >
+    landmarks[LANDMARK.THUMB_IP].y
+  );
+};
+
+/**
+ * Distance between two fingertips, normalized by hand size (wrist-to-
+ * middle-MCP distance), so the metric stays consistent regardless of how
+ * close the hand is to the camera.
+ */
+export const normalizedTipDistance = (
+  landmarks: Landmark[],
+  tip1: number,
+  tip2: number
+): number => {
+  const handSize = distance(
+    landmarks[LANDMARK.WRIST],
+    landmarks[LANDMARK.MIDDLE_MCP]
+  );
+
+  if (handSize === 0) return 0;
+
+  return distance(landmarks[tip1], landmarks[tip2]) / handSize;
+};
+
+/**
+ * True when two fingertips are close enough together to be considered
+ * "pinched" (e.g. thumb + index forming the ring of an OK sign).
+ */
+export const isPinching = (
+  landmarks: Landmark[],
+  point1: number,
+  point2: number,
+  threshold = 0.35
+): boolean => {
+  return (
+    normalizedTipDistance(landmarks, point1, point2) < threshold
+  );
 };

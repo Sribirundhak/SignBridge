@@ -8,12 +8,21 @@ export interface Landmark {
 }
 
 export type GestureName =
-  | "HELLO" // Open Palm
-  | "STOP" // Closed Fist
-  | "YES" // Thumb Up
-  | "POINT" // Index Finger Up
-  | "UNKNOWN" // Hand present but no known gesture matched
-  | "NO_HAND"; // No hand detected in frame
+  | "HELLO"
+  | "STOP"
+  | "YES"
+  | "NO"
+  | "POINT"
+  | "PEACE"
+  | "I_LOVE_YOU"
+  | "OK"
+  | "THANK_YOU"
+  | "GOOD"
+  | "BAD"
+  | "COME"
+  | "UNKNOWN"
+  | "NO_HAND";
+
 
 export interface GestureResult {
   gesture: GestureName;

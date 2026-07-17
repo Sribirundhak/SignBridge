@@ -21,13 +21,19 @@ const MAX_HISTORY = 20;
 const STABLE_DURATION_MS = 1000; // gesture must hold for 1s
 const MIN_HISTORY_CONFIDENCE = 0.8;
 const CURRENT_GESTURE_RESET_MS = 2000; // reset to "Waiting..." after 2s idle
+const FRAME_BUFFER_SIZE = 5; // rolling buffer holds the last 5 raw predictions
+const CONSECUTIVE_CONFIRM_COUNT = 3; // gesture must appear 3 consecutive frames within that buffer to be confirmed
 
 // Gestures that count as "real" detections (excludes UNKNOWN / NO_HAND)
 const RECOGNIZED_GESTURES: GestureName[] = [
   "HELLO",
   "STOP",
   "YES",
+  "NO",
   "POINT",
+  "PEACE",
+  "I_LOVE_YOU",
+  "OK",
 ];
 
 const loadScript = (src: string): Promise<void> =>
@@ -78,6 +84,14 @@ const App: React.FC = () => {
   const lastAddedGestureRef = useRef<GestureName | null>(null);
   const displayResetTimeoutRef = useRef<number | null>(null);
 
+  // --- Ref for rolling-buffer frame smoothing (requirement 1) ---
+  // Holds the last FRAME_BUFFER_SIZE (5) raw MediaPipe predictions in a
+  // FIFO window. A gesture is only forwarded to the existing
+  // handleGestureFrame() pipeline once it occupies the most recent
+  // CONSECUTIVE_CONFIRM_COUNT (3) consecutive slots of that buffer —
+  // filtering single/double-frame jitter without touching the recognizer.
+  const frameBufferRef = useRef<GestureName[]>([]);
+
   // Start webcam
   useEffect(() => {
     let cancelled = false;
@@ -125,8 +139,59 @@ const App: React.FC = () => {
       if (displayResetTimeoutRef.current !== null) {
         window.clearTimeout(displayResetTimeoutRef.current);
       }
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
     };
   }, []);
+
+  /**
+   * Rolling-buffer frame smoothing (requirements 1 & 2).
+   * Consumes the *raw*, unmodified output of defaultGestureRecognizer.recognize()
+   * every frame, pushes it into a FIFO buffer of the last 5 predictions, and
+   * only lets a gesture through once it fills the most recent 3 consecutive
+   * slots of that buffer. Until then it reports "NO_HAND" downstream, which
+   * the existing handleGestureFrame() logic already treats as "no detection"
+   * (breaking any in-progress stability streak) — so no changes were needed
+   * to that function's logic.
+   */
+  const smoothGesture = (raw: GestureResult): GestureResult => {
+    const buffer = frameBufferRef.current;
+
+    buffer.push(raw.gesture);
+    if (buffer.length > FRAME_BUFFER_SIZE) {
+      buffer.shift(); // keep only the last FRAME_BUFFER_SIZE predictions
+    }
+
+    const mostRecent = buffer.slice(-CONSECUTIVE_CONFIRM_COUNT);
+    const isConfirmed =
+      mostRecent.length === CONSECUTIVE_CONFIRM_COUNT &&
+      mostRecent.every((gesture) => gesture === raw.gesture);
+
+    if (isConfirmed) {
+      return raw;
+    }
+
+    return { gesture: "NO_HAND", label: "No Hand Detected", confidence: 0 };
+  };
+
+  /**
+   * Speech synthesis (requirement 3).
+   * Speaks a gesture label using the browser SpeechSynthesis API.
+   * Wrapped defensively since SpeechSynthesis support/availability can vary.
+   */
+  const speakGesture = (text: string) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      return;
+    }
+    try {
+      window.speechSynthesis.cancel(); // avoid queued/overlapping utterances
+      const utterance = new SpeechSynthesisUtterance(text);
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      // ignore speech synthesis errors (e.g. unsupported browsers)
+    }
+  };
 
   /**
    * Called on every recognized gesture frame.
@@ -173,6 +238,7 @@ const App: React.FC = () => {
 
         setGestureHistory((prev) => [entry, ...prev].slice(0, MAX_HISTORY));
         lastAddedGestureRef.current = gesture.gesture;
+        speakGesture(gesture.label); // requirement 3: speak on new confirmation
       }
     } else {
       // No hand / unknown gesture -> stability streak is broken.
@@ -244,10 +310,10 @@ const App: React.FC = () => {
 
             // MediaPipe -> Hand Landmarks -> Gesture Detection Function
             const gesture = defaultGestureRecognizer.recognize(landmarks);
-            handleGestureFrame(gesture);
+            handleGestureFrame(smoothGesture(gesture));
           } else {
             setHandDetected(false);
-            handleGestureFrame(defaultGestureRecognizer.recognize(null));
+            handleGestureFrame(smoothGesture(defaultGestureRecognizer.recognize(null)));
           }
 
           ctx.restore();
@@ -316,6 +382,48 @@ const App: React.FC = () => {
   const confidencePercent = displayedGesture
     ? Math.round(displayedGesture.confidence * 100)
     : null;
+
+  // Requirement 4: sentence built from history, oldest -> newest
+  // (gestureHistory itself stays newest-first, unchanged, for the list UI).
+  const sentence = gestureHistory.length
+    ? [...gestureHistory].reverse().map((entry) => entry.label).join(" ")
+    : "";
+
+  // Requirement 7: Clear
+  const handleClearConversation = () => {
+    setGestureHistory([]);
+    lastAddedGestureRef.current = null;
+    frameBufferRef.current = []; // reset rolling smoothing buffer too
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+  };
+
+  // Requirement 8: Export History as conversation.txt
+  const handleExportConversation = () => {
+    if (gestureHistory.length === 0) return;
+
+    const chronological = [...gestureHistory].reverse();
+    const lines = chronological.map(
+      (entry) =>
+        `[${formatTime(entry.timestamp)}] ${entry.label} (${Math.round(
+          entry.confidence * 100
+        )}%)`
+    );
+    const content = `SignBridge AI - Conversation Export\n\nSentence: ${sentence}\n\n${lines.join(
+      "\n"
+    )}\n`;
+
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "conversation.txt";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="sb-app">
@@ -460,6 +568,35 @@ const App: React.FC = () => {
             </div>
           </div>
 
+          <div className="sb-card sb-sentence-card">
+            <div className="sb-card-header">
+              <h2>Sentence</h2>
+            </div>
+            <p className="sb-sentence-text">
+              {sentence || "No sentence yet."}
+            </p>
+            <div className="sb-sentence-actions">
+              <button
+                type="button"
+                className="sb-btn sb-btn-secondary"
+                onClick={handleClearConversation}
+                disabled={gestureHistory.length === 0}
+                aria-label="Clear conversation history"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                className="sb-btn sb-btn-primary"
+                onClick={handleExportConversation}
+                disabled={gestureHistory.length === 0}
+                aria-label="Export conversation history as a text file"
+              >
+                Export History
+              </button>
+            </div>
+          </div>
+
           <div className="sb-card sb-history-card">
             <div className="sb-card-header">
               <h2>Conversation History</h2>
@@ -491,7 +628,7 @@ const App: React.FC = () => {
 
       {/* Footer */}
       <footer className="sb-footer">
-        <p>Powered by AI</p>
+        <p>Powered by Sri</p>
       </footer>
     </div>
   );
